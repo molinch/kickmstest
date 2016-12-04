@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using RoslynHelpers;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -21,11 +22,11 @@ namespace Shims2Moqs
                     throw new ArgumentException("Solution path is required");
                 }
 
-                ParseCsharpFiles(options.SolutionPath).Wait();
+                ParseCsharpFiles(options.SolutionPath, options.Preview).Wait();
             }
         }
 
-        private static async Task ParseCsharpFiles(string solutionFullPath)
+        private static async Task ParseCsharpFiles(string solutionFullPath, bool previewOnly)
         {
             foreach (var item in await GetUnitTestItems(solutionFullPath))
             {
@@ -55,7 +56,17 @@ namespace Shims2Moqs
                         }
                     }
 
-                    Console.WriteLine(newTestClass.ToFullString());
+                    if (previewOnly)
+                    {
+                        Console.WriteLine(newTestClass.ToFullString());
+                    }
+                    else
+                    {
+                        using (var writer = new StreamWriter(item.File.FilePath))
+                        {
+                            newTestClass.WriteTo(writer);
+                        }
+                    }
                 }
             }
         }

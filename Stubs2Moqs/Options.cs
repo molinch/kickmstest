@@ -11,5 +11,8 @@ namespace Shims2Moqs
     {
         [Option('s', "solution", HelpText = "Solution full path", Required = true)]
         public string SolutionPath { get; set; }
+
+        [Option('p', "preview", HelpText = "Preview changes only, this won't change anything", Required = false, DefaultValue = false)]
+        public bool Preview { get; set; }
     }
 }
