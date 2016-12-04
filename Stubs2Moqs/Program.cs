@@ -9,14 +9,22 @@ namespace Shims2Moqs
 {
     internal class Program
     {
-        private static void Main()
+        private static void Main(string[] args)
         {
-            ParseCsharpFiles().Wait();
+            var options = new Options();
+            if (CommandLine.Parser.Default.ParseArguments(args, options))
+            {
+                if (string.IsNullOrEmpty(options.SolutionPath))
+                {
+                    throw new ArgumentException("Solution path is required");
+                }
+
+                ParseCsharpFiles(options.SolutionPath).Wait();
+            }
         }
 
-        private static async Task ParseCsharpFiles()
+        private static async Task ParseCsharpFiles(string solutionFullPath)
         {
-            const string solutionFullPath = @"C:\Users\FabienRemote\Documents\Visual Studio 2015\Projects\ClassLibrary1\ClassLibrary1.sln";
             foreach (var item in await GetUnitTestItems(solutionFullPath))
             {
                 var msTestHelper = new MsTestHelper(item.File, item.SemanticModel);

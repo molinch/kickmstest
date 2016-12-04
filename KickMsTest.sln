@@ -7,7 +7,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DemoLibrary", "ClassLibrary
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DemoUnitTests", "UnitTestProject1\DemoUnitTests.csproj", "{1EA548EC-8CA3-473A-87E8-9B9785D0408E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Stubs2Moqs", "Shims2Moqs\Stubs2Moqs.csproj", "{2A60E86A-71AC-4702-8D62-D472463B3761}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Stubs2Moqs", "Stubs2Moqs\Stubs2Moqs.csproj", "{2A60E86A-71AC-4702-8D62-D472463B3761}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RoslynHelpers", "RoslynHelpers\RoslynHelpers.csproj", "{C6796AD6-F46B-4560-8BA7-41DF7A4A5AEE}"
 EndProject
