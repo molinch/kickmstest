@@ -1,3 +1,5 @@
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using RoslynHelpers;
 using System;
@@ -30,10 +32,29 @@ namespace Shims2Moqs
                 var msTestHelper = new MsTestHelper(item.File, item.SemanticModel);
                 
                 var rewriter = new MsTestStub2Moq(item.Workspace, item.File, item.SemanticModel, msTestHelper);
-                var newTestClass = rewriter.Visit(item.UnitTestClass);
+                var newTestClass = rewriter.Visit(item.Root);
 
                 if (newTestClass != item.Root)
                 {
+                    var root = newTestClass.SyntaxTree.GetRoot();
+                    var compilationUnitSyntax = root as CompilationUnitSyntax;
+
+                    if (compilationUnitSyntax != null)
+                    {
+                        bool hasMoqUsing = compilationUnitSyntax.Usings
+                            .Select(u => u.Name)
+                            .OfType<IdentifierNameSyntax>()
+                            .Any(u => u.Identifier.ValueText.Equals("Moq", StringComparison.InvariantCulture));
+
+                        if (!hasMoqUsing)
+                        {
+                            var moq = SyntaxFactory.ParseName("Moq");
+                            var moqUsing = SyntaxFactory.UsingDirective(moq).NormalizeWhitespace().WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed);
+                            newTestClass = compilationUnitSyntax
+                                .AddUsings(moqUsing);
+                        }
+                    }
+
                     Console.WriteLine(newTestClass.ToFullString());
                 }
             }
