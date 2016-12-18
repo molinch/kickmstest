@@ -9,13 +9,13 @@ using System.Threading.Tasks;
 
 namespace DemoUnitTests
 {
-    public class StubIMath: StubBase<IMath>, IMath
+    public class StubIRandomGenerator : StubBase<IRandomGenerator>, IRandomGenerator
     {
-        public FakesDelegates.Func<int, int, int> MultiplyInt32Int32 { private get; set; }
-        
-        int IMath.Multiply(int a, int b)
+        public FakesDelegates.Func<Number> Get { private get; set; }
+
+        Number IRandomGenerator.Get()
         {
-            return MultiplyInt32Int32(a, b);
+            return Get();
         }
     }
 }

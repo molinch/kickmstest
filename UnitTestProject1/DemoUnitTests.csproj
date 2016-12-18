@@ -58,9 +58,16 @@
     </Otherwise>
   </Choose>
   <ItemGroup>
+    <Compile Include="GenericPair_Static_Equals.cs" />
+    <Compile Include="GenericPair_Equals_Test.cs" />
+    <Compile Include="Number_Equals_Test.cs" />
+    <Compile Include="Number_RandomMultiply_Test.cs" />
     <Compile Include="StubBase.cs" />
+    <Compile Include="StubIGenericPair.cs" />
+    <Compile Include="StubINumber.cs" />
     <Compile Include="StubIMath.cs" />
-    <Compile Include="UnitTest1.cs" />
+    <Compile Include="StubIRandomGenerator.cs" />
+    <Compile Include="Number_MultiplyBy_Test.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
