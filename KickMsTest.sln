@@ -3,9 +3,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 14
 VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DemoLibrary", "ClassLibrary1\DemoLibrary.csproj", "{C93C7EEC-EF10-4115-88CA-AE268B51CD9B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DemoLibrary", "Demo\DemoLibrary\DemoLibrary.csproj", "{C93C7EEC-EF10-4115-88CA-AE268B51CD9B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DemoUnitTests", "UnitTestProject1\DemoUnitTests.csproj", "{1EA548EC-8CA3-473A-87E8-9B9785D0408E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DemoUnitTests", "Demo\DemoUnitTests\DemoUnitTests.csproj", "{1EA548EC-8CA3-473A-87E8-9B9785D0408E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Stubs2Moqs", "Stubs2Moqs\Stubs2Moqs.csproj", "{2A60E86A-71AC-4702-8D62-D472463B3761}"
 EndProject
