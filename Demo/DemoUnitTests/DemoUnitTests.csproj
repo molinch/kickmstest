@@ -71,7 +71,7 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\ClassLibrary1\DemoLibrary.csproj">
+    <ProjectReference Include="..\DemoLibrary\DemoLibrary.csproj">
       <Project>{c93c7eec-ef10-4115-88ca-ae268b51cd9b}</Project>
       <Name>DemoLibrary</Name>
     </ProjectReference>
