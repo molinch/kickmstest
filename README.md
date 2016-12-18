@@ -1,7 +1,11 @@
 # kickmstest
-Kick MsTest stub and replace it with Moq
+Finds MsTest Stub usages and converts them to Moq dynamic instances.
 
-#Parameters
+This project will not convert any Shim usages since they cannot be directly converted to Moq.
+## Official documentation regarding MsTest Stub
+https://msdn.microsoft.com/en-us/en-en/library/hh549174.aspx
+
+#Console parameters
 ##Solution path (mandatory)
 With the `-s` parameter.
 
