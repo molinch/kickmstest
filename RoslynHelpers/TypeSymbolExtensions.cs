@@ -35,6 +35,13 @@ namespace RoslynHelpers
                 .Where(m => predicate(m));
         }
 
+        public static bool HasPropertyWithSameName(this ITypeSymbol symbol, string propertyName)
+        {
+            return symbol.GetMembers()
+                .Where(m => m.DeclaredAccessibility == Accessibility.Public && m.Kind == SymbolKind.Property)
+                .Any(m => m.Name.Equals(propertyName, StringComparison.InvariantCulture));
+        }
+
         public static ISymbol GetMemberWithSameSignature(this ITypeSymbol symbol, string memberName, IEnumerable<ISymbol> memberArguments)
         {
             var arguments = memberArguments.ToList();

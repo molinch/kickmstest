@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Shims2Moqs
+namespace Stubs2Moqs
 {
     public class MsTestHelper
     {
@@ -39,8 +39,6 @@ namespace Shims2Moqs
         public bool IsFakesDelegatePropertySetter(INamedTypeSymbol fakeStub, string memberName, out IPropertySymbol fakesDelegateProperty)
         {
             fakesDelegateProperty = null;
-            if (!memberName.StartsWith("Set"))
-                return false;
 
             var typeMembers = fakeStub.GetMembers();
             foreach (var typeMember in typeMembers)

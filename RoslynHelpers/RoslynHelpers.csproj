@@ -89,6 +89,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ClassDeclarationSyntaxExtensions.cs" />
+    <Compile Include="InitializersToExpressions.cs" />
     <Compile Include="NamedTypeSymbolExtensions.cs" />
     <Compile Include="NamespaceOrTypeSymbolExtensions.cs" />
     <Compile Include="ProjectExtensions.cs" />

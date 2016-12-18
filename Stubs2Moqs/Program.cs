@@ -8,7 +8,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
-namespace Shims2Moqs
+namespace Stubs2Moqs
 {
     internal class Program
     {
@@ -30,9 +30,8 @@ namespace Shims2Moqs
         {
             foreach (var item in await GetUnitTestItems(solutionFullPath))
             {
-                var msTestHelper = new MsTestHelper(item.File, item.SemanticModel);
-                
-                var rewriter = new MsTestStub2Moq(item.Workspace, item.File, item.SemanticModel, msTestHelper);
+                var stub2Moq = new MsTestStub2Moq(item.Workspace, item.File, item.SemanticModel);
+                var rewriter = new MsTestStubRewriter(stub2Moq);
                 var newTestClass = rewriter.Visit(item.Root);
 
                 if (newTestClass != item.Root)
@@ -55,6 +54,9 @@ namespace Shims2Moqs
                                 .AddUsings(moqUsing);
                         }
                     }
+
+                    var newDoc = item.File.WithSyntaxRoot(newTestClass);
+                    var newSemanticModel = await newDoc.GetSemanticModelAsync().ConfigureAwait(false);
 
                     if (previewOnly)
                     {

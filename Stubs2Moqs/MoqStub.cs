@@ -7,17 +7,17 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Shims2Moqs
+namespace Stubs2Moqs
 {
     public class MoqStub
     {
-        public MoqStub(Stub originalMsStub, InvocationExpressionSyntax newNode)
+        public MoqStub(StubbedCall originalMsStub, InvocationExpressionSyntax newNode)
         {
             OriginalMsStub = originalMsStub;
             NewNode = newNode;
         }
 
-        public Stub OriginalMsStub { get; }
+        public StubbedCall OriginalMsStub { get; }
 
         public InvocationExpressionSyntax NewNode { get; }
 

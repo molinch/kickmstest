@@ -6,34 +6,23 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace Shims2Moqs
+namespace Stubs2Moqs
 {
-    public class MsTestStub2Moq : CSharpSyntaxRewriter
+    public class MsTestStub2Moq
     {
         private readonly Workspace workspace;
         private readonly Document document;
         private readonly SemanticModel semanticModel;
         private readonly MsTestHelper msTestHelper;
 
-        public MsTestStub2Moq(Workspace workspace, Document document, SemanticModel semanticModel, MsTestHelper msTestHelper)
+        public MsTestStub2Moq(Workspace workspace, Document document, SemanticModel semanticModel)
         {
             this.workspace = workspace;
             this.document = document;
             this.semanticModel = semanticModel;
-            this.msTestHelper = msTestHelper;
+            this.msTestHelper = new MsTestHelper(document, semanticModel);
         }
-
-        public override SyntaxNode VisitLocalDeclarationStatement(LocalDeclarationStatementSyntax node)
-        {
-            var newNode = SwitchType(node);
-            if (newNode != null)
-            {
-                return newNode;
-            }
-
-            return base.VisitLocalDeclarationStatement(node);
-        }
-
+        
         public SyntaxNode SwitchType(LocalDeclarationStatementSyntax variableDeclaration)
         {
             var declarationTypeSymbol = variableDeclaration.Declaration.GetTypeSymbol(semanticModel) as INamedTypeSymbol;
@@ -52,18 +41,19 @@ namespace Shims2Moqs
             return null;
         }
 
-        private SyntaxNode CreateLocalVariableDeclaration(LocalDeclarationStatementSyntax node, string typeToMock)
+        public SyntaxNode CreateLocalVariableDeclaration(LocalDeclarationStatementSyntax node, string typeToMock)
         {
             var variable = node.Declaration.Variables.FirstOrDefault();
             if (variable == null)
                 return null;
 
             var mockedType = CreateMockType(typeToMock);
+            var stubName = variable.Identifier.ValueText;
 
-            var declaration = SyntaxFactory.LocalDeclarationStatement(
+            var stubDefDeclaration = SyntaxFactory.LocalDeclarationStatement(
                 SyntaxFactory.VariableDeclaration(SyntaxFactory.IdentifierName("var"))
                     .WithVariables(SyntaxFactory.SingletonSeparatedList(
-                        SyntaxFactory.VariableDeclarator(MoqStub.GetStubDefinitionIdentifier(variable.Identifier.ValueText))
+                        SyntaxFactory.VariableDeclarator(MoqStub.GetStubDefinitionIdentifier(stubName))
                             .WithInitializer(
                                 SyntaxFactory.EqualsValueClause(
                                     SyntaxFactory.ObjectCreationExpression(mockedType)
@@ -74,81 +64,98 @@ namespace Shims2Moqs
                     ))
                 )
                 .NormalizeWhitespace()
-                .WithTriviaFrom(node);
+                .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed);
 
-            return declaration;
+            var objectCreationExpression = node.DescendantNodes(s => !(s is ObjectCreationExpressionSyntax)).OfType<ObjectCreationExpressionSyntax>().FirstOrDefault();
+            IEnumerable<ExpressionStatementSyntax> initializerExpression = new ExpressionStatementSyntax[0];
+            if (objectCreationExpression?.Initializer != null)
+            {
+                var symbol = node.Declaration.GetTypeSymbol(semanticModel) as INamedTypeSymbol;
+
+                initializerExpression =
+                    InitializersToExpressions.Expand(objectCreationExpression.Initializer, SyntaxFactory.IdentifierName(stubName))
+                        .Select(expressionStatementSyntax =>
+                        {
+                            var statementSyntax = expressionStatementSyntax.WithLeadingTrivia(node.GetLeadingTrivia());
+
+                            var newAssignment = TryReplaceAssignmentExpressionWithMethodCall(statementSyntax, symbol);
+                            if (newAssignment == null)
+                            {
+                                return statementSyntax;
+                            }
+
+                            return newAssignment
+                                .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed);
+                        });
+            }
+
+            var stubDeclaration = SyntaxFactory.VariableDeclaration(SyntaxFactory.IdentifierName("var"))
+                .WithVariables(SyntaxFactory.SingletonSeparatedList(
+                    SyntaxFactory.VariableDeclarator(variable.Identifier.ValueText)
+                        .WithInitializer(
+                            SyntaxFactory.EqualsValueClause(
+                                SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, MoqStub.GetStubDefinitionIdentifierName(stubName), SyntaxFactory.IdentifierName("Object"))
+                            )
+                        )
+                ))
+                .NormalizeWhitespace()
+                .WithLeadingTrivia(node.GetLeadingTrivia());
+
+            var statements = new SyntaxList<StatementSyntax>();
+            statements = statements.AddRange(new StatementSyntax[] { stubDefDeclaration }.Union(initializerExpression).Union(new StatementSyntax[] { SyntaxFactory.LocalDeclarationStatement(stubDeclaration) }));
+            var wrapper = SyntaxFactory.Block(statements);
+            wrapper = wrapper.WithOpenBraceToken(SyntaxFactory.MissingToken(SyntaxKind.OpenBraceToken)) // to remove scope {}
+                .WithCloseBraceToken(SyntaxFactory.MissingToken(SyntaxKind.CloseBraceToken));
+
+            return wrapper
+                .WithLeadingTrivia(node.GetLeadingTrivia())
+                .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed);
         }
-
-        public override SyntaxNode VisitExpressionStatement(ExpressionStatementSyntax node)
+        
+        public ExpressionStatementSyntax TryReplaceAssignmentExpressionWithMethodCall(ExpressionStatementSyntax node, INamedTypeSymbol typeSymbol = null)
         {
             var assignment = node.ChildNodes().OfType<AssignmentExpressionSyntax>().FirstOrDefault();
+            if (assignment == null)
+                return null;
 
-            if (assignment != null)
-            {
-                var newNode = TryReplaceAssignmentExpressionWithMethodCall(assignment);
-                if (newNode != null)
-                    return newNode;
-            }
-            return base.VisitExpressionStatement(node);
-        }
-
-        private GenericNameSyntax CreateMockType(string type)
-        {
-            return IdentifierNameHelper.CreateGenericName("Mock", type);
-        }
-
-        private SyntaxNode TryReplaceAssignmentExpressionWithMethodCall(AssignmentExpressionSyntax node)
-        {
-            var msStub = CreateMockFromMsTestMethodOrPropertyCall(node);
+            var msStub = StubMsTestMethodOrPropertyCall(assignment, typeSymbol);
             if (msStub != null)
             {
                 var moqStub = MockMethodOrPropertyCall(msStub);
 
                 var stubDefinition = SyntaxFactory.ExpressionStatement(moqStub.NewNode)
-                    .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed);
-
-                var stubDeclaration = SyntaxFactory.VariableDeclaration(SyntaxFactory.IdentifierName("var"))
-                    .WithVariables(SyntaxFactory.SingletonSeparatedList(
-                        SyntaxFactory.VariableDeclarator(msStub.Identifier.Identifier)
-                            .WithInitializer(
-                                SyntaxFactory.EqualsValueClause(
-                                    SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, moqStub.StubDefinitionIdentifierName, SyntaxFactory.IdentifierName("Object"))
-                                )
-                            )
-                    ))
-                    .NormalizeWhitespace()
-                    .WithLeadingTrivia(node.GetLeadingTrivia());
-
-                var statements = new SyntaxList<StatementSyntax>();
-                statements = statements.AddRange(new StatementSyntax[] { stubDefinition, SyntaxFactory.LocalDeclarationStatement(stubDeclaration) });
-                var wrapper = SyntaxFactory.Block(statements);
-                wrapper = wrapper.WithOpenBraceToken(SyntaxFactory.MissingToken(SyntaxKind.OpenBraceToken)) // to remove scope {}
-                    .WithCloseBraceToken(SyntaxFactory.MissingToken(SyntaxKind.CloseBraceToken));
-
-                return wrapper
                     .WithLeadingTrivia(node.GetLeadingTrivia())
                     .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed);
 
+                return stubDefinition;
             }
 
             return null;
         }
+        
+        private GenericNameSyntax CreateMockType(string type)
+        {
+            return IdentifierNameHelper.CreateGenericName("Mock", type);
+        }
 
-        private Stub CreateMockFromMsTestMethodOrPropertyCall(AssignmentExpressionSyntax node)
+        private StubbedCall StubMsTestMethodOrPropertyCall(AssignmentExpressionSyntax node, INamedTypeSymbol typeSymbol = null)
         {
             var member = node.ChildNodes().FirstOrDefault() as MemberAccessExpressionSyntax;
             if (member == null)
                 return null;
 
-            var identifier = member.Expression as IdentifierNameSyntax;
-            if (identifier == null)
-                return null;
-
-            var symbol = semanticModel.GetSymbolInfo(identifier).Symbol;
-            var typeSymbol = (symbol as ILocalSymbol)?.Type as INamedTypeSymbol;
-
             if (typeSymbol == null)
-                return null;
+            {
+                var identifier = member.Expression as IdentifierNameSyntax;
+                if (identifier == null)
+                    return null;
+
+                var symbol = semanticModel.GetSymbolInfo(identifier).Symbol;
+                typeSymbol = (symbol as ILocalSymbol)?.Type as INamedTypeSymbol;
+
+                if (typeSymbol == null)
+                    return null;
+            }
 
             if (!msTestHelper.IsStub(typeSymbol))
                 return null;
@@ -167,9 +174,7 @@ namespace Shims2Moqs
 
             var fakesDelegateType = (INamedTypeSymbol)fakesProperty.Type;
             string fakeCallName = methodOrPropertyCallIdentifier.Identifier.ValueText;
-
-            string originalMethodOrPropertyName = fakeCallName.Substring(3, fakeCallName.Length - 3); // remove Set part of the name (for example SetMultiplyInt32Int32 --> MultiplyInt32Int32)
-
+            
             List<ITypeSymbol> lambdaArguments = null;
             ITypeSymbol returnType = null;
             if (fakesDelegateType.TypeParameters.Length > 0)
@@ -185,7 +190,40 @@ namespace Shims2Moqs
                     lambdaArguments = fakesDelegateType.TypeArguments.ToList();
                 }
             }
+            
+            var originalType = typeSymbol.BaseType.TypeArguments.FirstOrDefault() as INamedTypeSymbol;
+            if (originalType == null)
+                return null;
 
+            string originalMethodOrPropertyName = GetOriginalMethodNameOrPropertyName(fakeCallName, lambdaArguments, originalType);
+
+            var originalMethodOrPropertySymbol = originalType.GetMemberWithSameSignature(originalMethodOrPropertyName, lambdaArguments);
+            if (originalMethodOrPropertySymbol == null)
+                return null;
+
+            var returnExpression = node.Right;
+
+            var msStubbed = new StubbedMethodOrProperty(originalType, originalMethodOrPropertySymbol, lambdaArguments, returnType);
+            var msStub = new StubbedCall(variableName, msStubbed, returnExpression, node);
+            return msStub;
+        }
+
+        private string GetOriginalMethodNameOrPropertyName(string fakeCallName, List<ITypeSymbol> lambdaArguments, INamedTypeSymbol originalType)
+        {
+            // More information can be found on MSDN: https://msdn.microsoft.com/en-us/en-en/library/hh549174.aspx
+
+            // For properties we should remove the Get/Set part at the end of name
+            if (fakeCallName.EndsWith("Get", StringComparison.InvariantCulture) || fakeCallName.EndsWith("Set", StringComparison.InvariantCulture))
+            {
+                string propertyName = fakeCallName.Substring(0, fakeCallName.Length - 3);
+                if (originalType.HasPropertyWithSameName(propertyName))
+                {
+                    return propertyName;
+                }
+            }
+
+            // For methods we should remove extra Type names at the end of name
+            string originalMethodOrPropertyName = fakeCallName;
             var reverseLambdaArguments = lambdaArguments.Reverse<ITypeSymbol>().ToList();
             for (int i = 0; i < reverseLambdaArguments.Count; i++)
             {
@@ -198,22 +236,10 @@ namespace Shims2Moqs
                 originalMethodOrPropertyName = originalMethodOrPropertyName.Substring(0, originalMethodOrPropertyName.Length - argument.Name.Length);
             }
 
-            var originalType = typeSymbol.BaseType.TypeArguments.FirstOrDefault() as INamedTypeSymbol;
-            if (originalType == null)
-                return null;
-
-            var originalMethodOrPropertySymbol = originalType.GetMemberWithSameSignature(originalMethodOrPropertyName, lambdaArguments);
-            if (originalMethodOrPropertySymbol == null)
-                return null;
-
-            var returnExpression = node.Right;
-
-            var msStubbed = new StubbedMethodOrProperty(originalType, originalMethodOrPropertySymbol, lambdaArguments, returnType);
-            var msStub = new Stub(variableName, msStubbed, returnExpression, node);
-            return msStub;
+            return originalMethodOrPropertyName;
         }
 
-        private MoqStub MockMethodOrPropertyCall(Stub msStub)
+        private MoqStub MockMethodOrPropertyCall(StubbedCall msStub)
         {
             var trivia = new List<SyntaxTrivia>() { SyntaxFactory.CarriageReturnLineFeed };
             trivia.AddRange(msStub.OriginalStubNode.GetLeadingTrivia());
@@ -225,6 +251,7 @@ namespace Shims2Moqs
             var memberAccess = SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, stubIdentifier, setup);
 
             var stubArguments = new List<ArgumentSyntax>();
+            var arguments = msStub.Stubbed.Arguments.ToList();
             foreach (var arg in msStub.Stubbed.Arguments)
             {
                 var typeName = arg.GetFullMetadataName();
@@ -240,15 +267,32 @@ namespace Shims2Moqs
             var argumentList = SyntaxFactory.ArgumentList(SyntaxFactory.SeparatedList(stubArguments));
 
             var stubLambdaAccess = SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, SyntaxFactory.IdentifierName("c"), SyntaxFactory.IdentifierName(msStub.Stubbed.MethodOrPropertySymbol.Name));
-            var stubLambdaBody = SyntaxFactory.InvocationExpression(stubLambdaAccess, argumentList);
             var stubLambdaParam = SyntaxFactory.Parameter(SyntaxFactory.Identifier("c"));
-            var stubLambda = SyntaxFactory.SimpleLambdaExpression(stubLambdaParam, stubLambdaBody).NormalizeWhitespace();
+            SimpleLambdaExpressionSyntax stubLambda;
+            if (msStub.Stubbed.MethodOrPropertySymbol.Kind == SymbolKind.Property)
+            {
+                stubLambda = SyntaxFactory.SimpleLambdaExpression(stubLambdaParam, stubLambdaAccess).NormalizeWhitespace();
+            }
+            else
+            {
+                var stubLambdaBody = SyntaxFactory.InvocationExpression(stubLambdaAccess, argumentList);
+                stubLambda = SyntaxFactory.SimpleLambdaExpression(stubLambdaParam, stubLambdaBody).NormalizeWhitespace();
+            }
                         
             var stubCall = SyntaxFactory
                 .InvocationExpression(memberAccess, SyntaxFactory.ArgumentList(SyntaxFactory.SeparatedList(new[] { SyntaxFactory.Argument(stubLambda) })))
                 .WithTrailingTrivia(trivia);
 
-            var ret = IdentifierNameHelper.CreateGenericName("Returns", msStub.Stubbed.Arguments.Select(a => a.GetFullMetadataName()));
+            SimpleNameSyntax ret;
+            if (arguments.Count == 0)
+            {
+                ret = SyntaxFactory.IdentifierName("Returns");
+            }
+            else
+            {
+                ret = IdentifierNameHelper.CreateGenericName("Returns", msStub.Stubbed.Arguments.Select(a => a.GetFullMetadataName()));
+            }
+            
             var retArgsList = SyntaxFactory.SingletonSeparatedList(SyntaxFactory.Argument(msStub.StubReturn));
             var retArgs = SyntaxFactory.ArgumentList(retArgsList);
 

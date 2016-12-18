@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Shims2Moqs
+namespace Stubs2Moqs
 {
     class Options
     {

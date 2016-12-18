@@ -1,7 +1,7 @@
 ﻿using Microsoft.CodeAnalysis;
 using System.Collections.Generic;
 
-namespace Shims2Moqs
+namespace Stubs2Moqs
 {
     public class StubbedMethodOrProperty
     {

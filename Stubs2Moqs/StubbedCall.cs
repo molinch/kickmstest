@@ -1,10 +1,10 @@
 ﻿using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace Shims2Moqs
+namespace Stubs2Moqs
 {
-    public class Stub
+    public class StubbedCall
     {
-        public Stub(IdentifierNameSyntax identifier, StubbedMethodOrProperty stubbed, ExpressionSyntax stubReturn, AssignmentExpressionSyntax originalStubNode)
+        public StubbedCall(IdentifierNameSyntax identifier, StubbedMethodOrProperty stubbed, ExpressionSyntax stubReturn, AssignmentExpressionSyntax originalStubNode)
         {
             Identifier = identifier;
             Stubbed = stubbed;
