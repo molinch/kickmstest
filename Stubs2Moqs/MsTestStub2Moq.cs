@@ -124,7 +124,7 @@ namespace Stubs2Moqs
             var assignment = node.ChildNodes().OfType<AssignmentExpressionSyntax>().FirstOrDefault();
             if (assignment != null)
             {
-                var member = node.ChildNodes().FirstOrDefault() as MemberAccessExpressionSyntax;
+                var member = assignment.ChildNodes().FirstOrDefault() as MemberAccessExpressionSyntax;
                 if (member == null)
                     return null;
 
