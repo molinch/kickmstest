@@ -1,15 +1,18 @@
-﻿using Microsoft.CodeAnalysis.CSharp.Syntax;
+﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Stubs2Moqs
 {
     public class StubbedCall
     {
-        public StubbedCall(IdentifierNameSyntax identifier, StubbedMethodOrProperty stubbed, ExpressionSyntax stubReturn, AssignmentExpressionSyntax originalStubNode)
+        public StubbedCall(IdentifierNameSyntax identifier, StubbedMethodOrProperty stubbed, ExpressionSyntax stubReturn,
+            SyntaxTriviaList originalLeadingTrivia, SyntaxTriviaList originalTrailingTrivia)
         {
             Identifier = identifier;
             Stubbed = stubbed;
             StubReturn = stubReturn;
-            OriginalStubNode = originalStubNode;
+            OriginalLeadingTrivia = originalLeadingTrivia;
+            OriginalTrailingTrivia = originalTrailingTrivia;
         }
 
         public IdentifierNameSyntax Identifier { get; }
@@ -18,6 +21,8 @@ namespace Stubs2Moqs
 
         public ExpressionSyntax StubReturn { get; }
 
-        public AssignmentExpressionSyntax OriginalStubNode { get; }
+        public SyntaxTriviaList OriginalLeadingTrivia { get; }
+
+        public SyntaxTriviaList OriginalTrailingTrivia { get; }
     }
 }

@@ -65,7 +65,7 @@ namespace RoslynHelpers
                         var argument = arguments[i];
                         var methodParameter = method.Parameters[i].Type;
 
-                        if (!argument.Equals(methodParameter))
+                        if (argument.ToString() != methodParameter.ToString()) // .Equals won't work in some cases, that's why we compare string representation
                             return false;
                     }
 

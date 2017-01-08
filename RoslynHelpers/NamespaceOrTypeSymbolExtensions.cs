@@ -9,6 +9,7 @@ namespace RoslynHelpers
 {
     public static class NamespaceOrTypeSymbolExtensions
     {
+        /*
         public static string GetFullMetadataName(this INamespaceOrTypeSymbol symbol)
         {
             ISymbol s = symbol;
@@ -31,7 +32,7 @@ namespace RoslynHelpers
             }
 
             return sb.ToString();
-        }
+        }*/
 
         private static bool IsRootNamespace(ISymbol s)
         {

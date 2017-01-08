@@ -50,7 +50,7 @@ namespace RoslynHelpers
             if (typeSymbol == null)
                 return false;
 
-            return typeSymbol.GetFullMetadataName().Equals(typeFullName, System.StringComparison.InvariantCulture);
+            return typeSymbol.ToDisplayString().Equals(typeFullName, System.StringComparison.InvariantCulture);
         }
     }
 }

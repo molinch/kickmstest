@@ -58,17 +58,21 @@
     </Otherwise>
   </Choose>
   <ItemGroup>
+    <Compile Include="GenericMethods_GetRandom_Test.cs" />
     <Compile Include="GenericPair_Static_Equals.cs" />
     <Compile Include="GenericPair_Equals_Test.cs" />
+    <Compile Include="ListWithExtras_GetRandom_Test.cs" />
     <Compile Include="Number_Equals_Test.cs" />
     <Compile Include="Number_RandomMultiply_Test.cs" />
     <Compile Include="StubBase.cs" />
+    <Compile Include="StubIGenericMethods.cs" />
     <Compile Include="StubIGenericPair.cs" />
     <Compile Include="StubINumber.cs" />
     <Compile Include="StubIMath.cs" />
     <Compile Include="StubIRandomGenerator.cs" />
     <Compile Include="Number_MultiplyBy_Test.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
+    <Compile Include="StubNumber.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\DemoLibrary\DemoLibrary.csproj">

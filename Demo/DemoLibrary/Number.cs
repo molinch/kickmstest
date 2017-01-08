@@ -14,12 +14,12 @@
             this.value = value;
         }
 
-        public Number MultiplyBy(int value)
+        public virtual Number MultiplyBy(int value)
         {
             return new Number(math, random, math.Multiply(Value, value));
         }
 
-        public Number RandomMultiply()
+        public virtual Number RandomMultiply()
         {
             return MultiplyBy(random.Get().Value);
         }

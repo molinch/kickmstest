@@ -41,9 +41,12 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="FakesDelegates.cs" />
+    <Compile Include="GenericMethods.cs" />
+    <Compile Include="IGenericMethods.cs" />
     <Compile Include="IGenericPair.cs" />
     <Compile Include="INumber.cs" />
     <Compile Include="IRandomGenerator.cs" />
+    <Compile Include="ListWithExtras.cs" />
     <Compile Include="Math.cs" />
     <Compile Include="IMath.cs" />
     <Compile Include="Number.cs" />

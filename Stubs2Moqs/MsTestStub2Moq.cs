@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using RoslynHelpers;
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 
 namespace Stubs2Moqs
@@ -114,11 +115,40 @@ namespace Stubs2Moqs
         
         public ExpressionStatementSyntax TryReplaceAssignmentExpressionWithMethodCall(ExpressionStatementSyntax node, INamedTypeSymbol typeSymbol = null)
         {
-            var assignment = node.ChildNodes().OfType<AssignmentExpressionSyntax>().FirstOrDefault();
-            if (assignment == null)
-                return null;
+            // There are 2 cases to consider
+            // Either we stub a method/property by setting a property; set value being the stub lambda
+            // Or by invoking a method having a single argument; method argument being the stub lambda
 
-            var msStub = StubMsTestMethodOrPropertyCall(assignment, typeSymbol);
+            StubbedCall msStub = null;
+
+            var assignment = node.ChildNodes().OfType<AssignmentExpressionSyntax>().FirstOrDefault();
+            if (assignment != null)
+            {
+                var member = node.ChildNodes().FirstOrDefault() as MemberAccessExpressionSyntax;
+                if (member == null)
+                    return null;
+
+                var resultExpression = assignment.Right;
+
+                msStub = StubMsTestMethodOrPropertyCall(assignment, member, resultExpression, typeSymbol);
+            }
+            else
+            {
+                var invocation = node.ChildNodes().OfType<InvocationExpressionSyntax>().FirstOrDefault();
+                if (invocation == null)
+                    return null;
+
+                var member = invocation.ChildNodes().FirstOrDefault() as MemberAccessExpressionSyntax;
+                if (member == null)
+                    return null;
+
+                var argument = invocation.ArgumentList.ChildNodes().FirstOrDefault() as ArgumentSyntax;
+                if (argument == null)
+                    return null;
+
+                msStub = StubMsTestMethodOrPropertyCall(invocation, member, argument.Expression, typeSymbol);
+            }
+            
             if (msStub != null)
             {
                 var moqStub = MockMethodOrPropertyCall(msStub);
@@ -138,12 +168,8 @@ namespace Stubs2Moqs
             return IdentifierNameHelper.CreateGenericName("Mock", type);
         }
 
-        private StubbedCall StubMsTestMethodOrPropertyCall(AssignmentExpressionSyntax node, INamedTypeSymbol typeSymbol = null)
+        private StubbedCall StubMsTestMethodOrPropertyCall(ExpressionSyntax originalNode, MemberAccessExpressionSyntax member, ExpressionSyntax returnExpression, INamedTypeSymbol typeSymbol = null)
         {
-            var member = node.ChildNodes().FirstOrDefault() as MemberAccessExpressionSyntax;
-            if (member == null)
-                return null;
-
             if (typeSymbol == null)
             {
                 var identifier = member.Expression as IdentifierNameSyntax;
@@ -164,15 +190,15 @@ namespace Stubs2Moqs
             if (variableName == null)
                 return null;
 
-            var methodOrPropertyCallIdentifier = member.ChildNodes().OfType<IdentifierNameSyntax>().LastOrDefault();
+            var methodOrPropertyCallIdentifier = member.ChildNodes().OfType<SimpleNameSyntax>().LastOrDefault();
             if (methodOrPropertyCallIdentifier == null)
                 return null;
 
-            IPropertySymbol fakesProperty;
-            if (!msTestHelper.IsFakesDelegatePropertySetter(typeSymbol, methodOrPropertyCallIdentifier.Identifier.ValueText, out fakesProperty))
+            INamedTypeSymbol fakesDelegateType;
+            ImmutableArray<ITypeSymbol> methodTypeArguments;
+            if (!msTestHelper.IsFakesDelegateMethodOrPropertySetter(typeSymbol, methodOrPropertyCallIdentifier.Identifier.ValueText, out fakesDelegateType, out methodTypeArguments))
                 return null;
-
-            var fakesDelegateType = (INamedTypeSymbol)fakesProperty.Type;
+            
             string fakeCallName = methodOrPropertyCallIdentifier.Identifier.ValueText;
             
             List<ITypeSymbol> lambdaArguments = null;
@@ -190,59 +216,52 @@ namespace Stubs2Moqs
                     lambdaArguments = fakesDelegateType.TypeArguments.ToList();
                 }
             }
+            var concreteLambdaArguments = lambdaArguments;
+
+            var genericMemberName = member.Name as GenericNameSyntax;
+            if (genericMemberName != null)
+            {
+                var hashsetGenericType = new Dictionary<ITypeSymbol, TypeSyntax>();
+                var realTypeArguments = genericMemberName.TypeArgumentList.Arguments;
+                for (int i = 0; i < realTypeArguments.Count; i++)
+                {
+                    var genericType = methodTypeArguments[i];
+                    var realType = realTypeArguments[i];
+                    hashsetGenericType[genericType] = realType;
+                }
+
+                concreteLambdaArguments = lambdaArguments.ToList();
+                for (int i = 0; i < lambdaArguments.Count; i++)
+                {
+                    var lambdaArgument = concreteLambdaArguments[i] as INamedTypeSymbol;
+                    if (lambdaArgument.IsGenericType)
+                    {
+                        var concreteArguments = lambdaArgument.TypeArguments.Select(arg => semanticModel.GetTypeInfo(hashsetGenericType[arg]).Type);
+                        var unbound = lambdaArgument.ConstructUnboundGenericType();
+
+                        var newLambdaArgument = lambdaArgument.ConstructedFrom.Construct(concreteArguments.ToArray());
+                        concreteLambdaArguments[i] = newLambdaArgument;
+                    }
+                }
+            }
             
             var originalType = typeSymbol.BaseType.TypeArguments.FirstOrDefault() as INamedTypeSymbol;
             if (originalType == null)
                 return null;
 
-            string originalMethodOrPropertyName = GetOriginalMethodNameOrPropertyName(fakeCallName, lambdaArguments, originalType);
-
-            var originalMethodOrPropertySymbol = originalType.GetMemberWithSameSignature(originalMethodOrPropertyName, lambdaArguments);
+            var originalMethodOrPropertySymbol = msTestHelper.GetOriginalSymbolFromFakeCallName(fakeCallName, lambdaArguments, originalType);
             if (originalMethodOrPropertySymbol == null)
                 return null;
 
-            var returnExpression = node.Right;
-
-            var msStubbed = new StubbedMethodOrProperty(originalType, originalMethodOrPropertySymbol, lambdaArguments, returnType);
-            var msStub = new StubbedCall(variableName, msStubbed, returnExpression, node);
+            var msStubbed = new StubbedMethodOrProperty(originalType, originalMethodOrPropertySymbol, concreteLambdaArguments, returnType);
+            var msStub = new StubbedCall(variableName, msStubbed, returnExpression, originalNode.GetLeadingTrivia(), originalNode.GetTrailingTrivia());
             return msStub;
         }
-
-        private string GetOriginalMethodNameOrPropertyName(string fakeCallName, List<ITypeSymbol> lambdaArguments, INamedTypeSymbol originalType)
-        {
-            // More information can be found on MSDN: https://msdn.microsoft.com/en-us/en-en/library/hh549174.aspx
-
-            // For properties we should remove the Get/Set part at the end of name
-            if (fakeCallName.EndsWith("Get", StringComparison.InvariantCulture) || fakeCallName.EndsWith("Set", StringComparison.InvariantCulture))
-            {
-                string propertyName = fakeCallName.Substring(0, fakeCallName.Length - 3);
-                if (originalType.HasPropertyWithSameName(propertyName))
-                {
-                    return propertyName;
-                }
-            }
-
-            // For methods we should remove extra Type names at the end of name
-            string originalMethodOrPropertyName = fakeCallName;
-            var reverseLambdaArguments = lambdaArguments.Reverse<ITypeSymbol>().ToList();
-            for (int i = 0; i < reverseLambdaArguments.Count; i++)
-            {
-                var argument = reverseLambdaArguments[i];
-
-                if (!originalMethodOrPropertyName.EndsWith(argument.Name))
-                    return null;
-
-                // remove type name from name, when needed only (for example MultiplyInt32Int32 --> Multiply)
-                originalMethodOrPropertyName = originalMethodOrPropertyName.Substring(0, originalMethodOrPropertyName.Length - argument.Name.Length);
-            }
-
-            return originalMethodOrPropertyName;
-        }
-
+        
         private MoqStub MockMethodOrPropertyCall(StubbedCall msStub)
         {
             var trivia = new List<SyntaxTrivia>() { SyntaxFactory.CarriageReturnLineFeed };
-            trivia.AddRange(msStub.OriginalStubNode.GetLeadingTrivia());
+            trivia.AddRange(msStub.OriginalLeadingTrivia);
             trivia.Add(SyntaxFactory.Tab);
             
             var stubIdentifier = MoqStub.GetStubDefinitionIdentifierName(msStub.Identifier.Identifier.ValueText)
@@ -254,7 +273,7 @@ namespace Stubs2Moqs
             var arguments = msStub.Stubbed.Arguments.ToList();
             foreach (var arg in msStub.Stubbed.Arguments)
             {
-                var typeName = arg.GetFullMetadataName();
+                var typeName = arg.ToDisplayString();
 
                 var it = SyntaxFactory.IdentifierName("It");
                 var isAny = IdentifierNameHelper.CreateGenericName("IsAny", typeName);
@@ -290,7 +309,7 @@ namespace Stubs2Moqs
             }
             else
             {
-                ret = IdentifierNameHelper.CreateGenericName("Returns", msStub.Stubbed.Arguments.Select(a => a.GetFullMetadataName()));
+                ret = IdentifierNameHelper.CreateGenericName("Returns", msStub.Stubbed.Arguments.Select(a => a.ToDisplayString()));
             }
             
             var retArgsList = SyntaxFactory.SingletonSeparatedList(SyntaxFactory.Argument(msStub.StubReturn));

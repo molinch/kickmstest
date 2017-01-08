@@ -20,5 +20,15 @@ namespace DemoLibrary
         {
             return new Number(math, this, random.Next());
         }
+
+        public Number Get(int max)
+        {
+            return new Number(math, this, random.Next(max));
+        }
+
+        public Number Get(int min, int max)
+        {
+            return new Number(math, this, random.Next(min, max));
+        }
     }
 }

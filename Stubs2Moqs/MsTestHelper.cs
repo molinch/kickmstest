@@ -2,6 +2,7 @@
 using RoslynHelpers;
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -24,33 +25,117 @@ namespace Stubs2Moqs
             return typeSymbol.InheritsFrom("Microsoft.QualityTools.Testing.Fakes.Stubs.StubBase");
         }
 
-        public bool IsFakesDelegateProperty(ISymbol member)
+        public bool IsFakesDelegateProperty(ISymbol member, out INamedTypeSymbol fakesDelegateType, out ImmutableArray<ITypeSymbol> methodTypeArguments)
         {
-            if (member.DeclaredAccessibility == Accessibility.Public && member.Kind == SymbolKind.Property)
+            fakesDelegateType = null;
+
+            if (member.DeclaredAccessibility == Accessibility.Public)
             {
-                var property = (IPropertySymbol)member;
-                var propertyTypeName = property.Type.ToDisplayString();
-                return propertyTypeName.StartsWith("Microsoft.QualityTools.Testing.Fakes.FakesDelegates", StringComparison.InvariantCulture);
+                switch (member.Kind)
+                {
+                    case SymbolKind.Property:
+                        var property = (IPropertySymbol)member;
+                        var propertyTypeName = property.Type.ToDisplayString();
+                        bool isFake =  propertyTypeName.StartsWith("Microsoft.QualityTools.Testing.Fakes.FakesDelegates", StringComparison.InvariantCulture);
+                        if (isFake)
+                        {
+                            fakesDelegateType = (INamedTypeSymbol)property.Type;
+                        }
+                        return isFake;
+
+                    case SymbolKind.Method:
+                        var method = (IMethodSymbol)member;
+                        if (method.Parameters.Length == 1)
+                        {
+                            var parameter = method.Parameters[0];
+                            var methodTypeName = parameter.ToString();
+                            if (methodTypeName != null)
+                            {
+                                isFake = methodTypeName.StartsWith("Microsoft.QualityTools.Testing.Fakes.FakesDelegates", StringComparison.InvariantCulture);
+                                if (isFake)
+                                {
+                                    fakesDelegateType = (INamedTypeSymbol)parameter.Type;
+                                    methodTypeArguments = method.TypeArguments;
+                                }
+                                return isFake;
+                            }
+                        }
+                        return false;
+                }
+
             }
 
             return false;
         }
 
-        public bool IsFakesDelegatePropertySetter(INamedTypeSymbol fakeStub, string memberName, out IPropertySymbol fakesDelegateProperty)
+        public bool IsFakesDelegateMethodOrPropertySetter(INamedTypeSymbol fakeStub, string memberName, out INamedTypeSymbol fakesDelegateType, out ImmutableArray<ITypeSymbol> methodTypeArguments)
         {
-            fakesDelegateProperty = null;
-
+            fakesDelegateType = null;
             var typeMembers = fakeStub.GetMembers();
             foreach (var typeMember in typeMembers)
             {
-                if (IsFakesDelegateProperty(typeMember) && typeMember.Name == memberName)
+                if (IsFakesDelegateProperty(typeMember, out fakesDelegateType, out methodTypeArguments) && typeMember.Name == memberName)
                 {
-                    fakesDelegateProperty = (IPropertySymbol)typeMember;
                     return true;
                 }
             }
 
             return false;
         }
+
+        public ISymbol GetOriginalSymbolFromFakeCallName(string fakeCallName, List<ITypeSymbol> lambdaArguments, INamedTypeSymbol originalType)
+        {
+            string originalName = GetOriginalMethodNameOrPropertyName(fakeCallName, lambdaArguments, originalType);
+            return GetOriginalSymbol(originalName, lambdaArguments, originalType);
+        }
+
+        private ISymbol GetOriginalSymbol(string originalName, List<ITypeSymbol> lambdaArguments, INamedTypeSymbol originalType)
+        {
+            var originalMethodOrPropertySymbol = originalType.GetMemberWithSameSignature(originalName, lambdaArguments);
+            if (originalMethodOrPropertySymbol == null)
+            {
+                // special case to handle stubbed generic methods. In that case the name becomes freaking weird thanks to MsTest.
+                var lastIndexOf = originalName.LastIndexOf("Of");
+                if (lastIndexOf > 0)
+                {
+                    var partName = originalName.Substring(0, lastIndexOf);
+                    return GetOriginalSymbol(partName, lambdaArguments, originalType);
+                }
+            }
+
+            return originalMethodOrPropertySymbol;
+        }
+
+        private string GetOriginalMethodNameOrPropertyName(string fakeCallName, List<ITypeSymbol> lambdaArguments, INamedTypeSymbol originalType)
+        {
+            // More information can be found on MSDN: https://msdn.microsoft.com/en-us/en-en/library/hh549174.aspx
+
+            // For properties we should remove the Get/Set part at the end of name
+            if (fakeCallName.EndsWith("Get", StringComparison.InvariantCulture) || fakeCallName.EndsWith("Set", StringComparison.InvariantCulture))
+            {
+                string propertyName = fakeCallName.Substring(0, fakeCallName.Length - 3);
+                if (originalType.HasPropertyWithSameName(propertyName))
+                {
+                    return propertyName;
+                }
+            }
+
+            // For methods we should remove extra Type names at the end of name
+            string originalMethodOrPropertyName = fakeCallName;
+            var reverseLambdaArguments = lambdaArguments.Reverse<ITypeSymbol>().ToList();
+            for (int i = 0; i < reverseLambdaArguments.Count; i++)
+            {
+                var argument = reverseLambdaArguments[i];
+
+                if (!originalMethodOrPropertyName.EndsWith(argument.Name))
+                    break;
+
+                // remove type name from name, when needed only (for example MultiplyInt32Int32 --> Multiply)
+                originalMethodOrPropertyName = originalMethodOrPropertyName.Substring(0, originalMethodOrPropertyName.Length - argument.Name.Length);
+            }
+
+            return originalMethodOrPropertyName;
+        }
+
     }
 }
