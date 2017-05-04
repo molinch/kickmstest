@@ -1,6 +1,7 @@
 ﻿using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Semantics;
 using RoslynHelpers;
 using System;
 using System.Collections.Generic;
@@ -23,7 +24,82 @@ namespace Stubs2Moqs
             this.semanticModel = semanticModel;
             this.msTestHelper = new MsTestHelper(document, semanticModel);
         }
-        
+
+        public SyntaxNode SwitchFieldDeclarationType(FieldDeclarationSyntax node)
+        {
+            var declarationTypeSymbol = semanticModel.GetTypeInfo(node.Declaration.Type).ConvertedType as INamedTypeSymbol;
+            if (declarationTypeSymbol == null)
+                return null;
+
+            if (!msTestHelper.IsStub(declarationTypeSymbol))
+                return null;
+
+            var typeToMock = declarationTypeSymbol.BaseType.GetGenericTypeArgument();
+            var mockType = CreateMockType(typeToMock);
+
+            return node.WithDeclaration(node.Declaration.WithType(mockType.WithTriviaFrom(node.Declaration.Type)).WithTriviaFrom(node.Declaration));
+        }
+
+        public SyntaxNode SwitchPropertyDeclarationType(PropertyDeclarationSyntax node)
+        {
+            var declarationTypeSymbol = semanticModel.GetTypeInfo(node.Type).ConvertedType as INamedTypeSymbol;
+            if (declarationTypeSymbol == null)
+                return null;
+
+            if (!msTestHelper.IsStub(declarationTypeSymbol))
+                return null;
+
+            var typeToMock = declarationTypeSymbol.BaseType.GetGenericTypeArgument();
+            var mockType = CreateMockType(typeToMock).WithTriviaFrom(node.Type);
+
+            return node.WithType(mockType);
+        }
+
+        public SyntaxNode SwitchType(AssignmentExpressionSyntax assignment)
+        {
+            var left = assignment.Left as MemberAccessExpressionSyntax;
+            if (left == null)
+                return null;
+
+            var right = assignment.Right as ObjectCreationExpressionSyntax;
+
+            var declarationTypeSymbol = semanticModel.GetTypeInfo(left).ConvertedType as INamedTypeSymbol;
+            if (declarationTypeSymbol == null)
+                return null;
+
+            if (msTestHelper.IsStub(declarationTypeSymbol))
+            {
+                var typeToMock = declarationTypeSymbol.BaseType.GetGenericTypeArgument();
+                if (typeToMock == null)
+                    return null;
+
+                var identifierName = left.Name.Identifier.ValueText;
+                var stubName = char.ToLowerInvariant(identifierName[0]) + identifierName.Substring(1);
+                var stubDefDeclaration = CreateStubDefinitionDeclaration(stubName, typeToMock)
+                    .NormalizeWhitespace()
+                    .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed);
+                
+                var initializerExpression = CreateStubInitializerDeclarations(assignment, stubName, declarationTypeSymbol);
+
+                var newAssignment = SyntaxFactory.AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, left, MoqStub.GetStubDefinitionIdentifierName(stubName))
+                    .NormalizeWhitespace()
+                    .WithLeadingTrivia(assignment.GetLeadingTrivia());
+
+                var statements = new SyntaxList<StatementSyntax>();
+                statements = statements.AddRange(new StatementSyntax[] { stubDefDeclaration }.Union(initializerExpression).Union(new StatementSyntax[] { SyntaxFactory.ExpressionStatement(newAssignment) }));
+                var wrapper = SyntaxFactory.Block(statements);
+                wrapper = wrapper.WithOpenBraceToken(SyntaxFactory.MissingToken(SyntaxKind.OpenBraceToken)) // to remove scope {}
+                    .WithCloseBraceToken(SyntaxFactory.MissingToken(SyntaxKind.CloseBraceToken));
+
+                return wrapper
+                    .WithLeadingTrivia(assignment.GetLeadingTrivia())
+                    .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed);
+            }
+
+            return null;
+        }
+
+
         public SyntaxNode SwitchType(LocalDeclarationStatementSyntax variableDeclaration)
         {
             var declarationTypeSymbol = variableDeclaration.Declaration.GetTypeSymbol(semanticModel) as INamedTypeSymbol;
@@ -41,20 +117,15 @@ namespace Stubs2Moqs
 
             return null;
         }
-
-        public SyntaxNode CreateLocalVariableDeclaration(LocalDeclarationStatementSyntax node, string typeToMock)
+        
+        private LocalDeclarationStatementSyntax CreateStubDefinitionDeclaration(string variableName, string typeToMock)
         {
-            var variable = node.Declaration.Variables.FirstOrDefault();
-            if (variable == null)
-                return null;
-
             var mockedType = CreateMockType(typeToMock);
-            var stubName = variable.Identifier.ValueText;
 
-            var stubDefDeclaration = SyntaxFactory.LocalDeclarationStatement(
+            return SyntaxFactory.LocalDeclarationStatement(
                 SyntaxFactory.VariableDeclaration(SyntaxFactory.IdentifierName("var"))
                     .WithVariables(SyntaxFactory.SingletonSeparatedList(
-                        SyntaxFactory.VariableDeclarator(MoqStub.GetStubDefinitionIdentifier(stubName))
+                        SyntaxFactory.VariableDeclarator(MoqStub.GetStubDefinitionIdentifier(variableName))
                             .WithInitializer(
                                 SyntaxFactory.EqualsValueClause(
                                     SyntaxFactory.ObjectCreationExpression(mockedType)
@@ -66,15 +137,16 @@ namespace Stubs2Moqs
                 )
                 .NormalizeWhitespace()
                 .WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed);
+        }
 
+        private IEnumerable<ExpressionStatementSyntax> CreateStubInitializerDeclarations(SyntaxNode node, string variableName, INamedTypeSymbol symbol)
+        {
             var objectCreationExpression = node.DescendantNodes(s => !(s is ObjectCreationExpressionSyntax)).OfType<ObjectCreationExpressionSyntax>().FirstOrDefault();
-            IEnumerable<ExpressionStatementSyntax> initializerExpression = new ExpressionStatementSyntax[0];
-            if (objectCreationExpression?.Initializer != null)
+            IEnumerable<ExpressionStatementSyntax> initializerExpressions = new ExpressionStatementSyntax[0];
+            if (objectCreationExpression?.Initializer != null && symbol != null)
             {
-                var symbol = node.Declaration.GetTypeSymbol(semanticModel) as INamedTypeSymbol;
-
-                initializerExpression =
-                    InitializersToExpressions.Expand(objectCreationExpression.Initializer, SyntaxFactory.IdentifierName(stubName))
+                initializerExpressions =
+                    InitializersToExpressions.Expand(objectCreationExpression.Initializer, SyntaxFactory.IdentifierName(variableName))
                         .Select(expressionStatementSyntax =>
                         {
                             var statementSyntax = expressionStatementSyntax.WithLeadingTrivia(node.GetLeadingTrivia());
@@ -90,17 +162,38 @@ namespace Stubs2Moqs
                         });
             }
 
+            return initializerExpressions;
+        }
+
+        private VariableDeclarationSyntax CreateStubDeclaration(SyntaxNode node, string variableName, string variableIdentifierName)
+        {
             var stubDeclaration = SyntaxFactory.VariableDeclaration(SyntaxFactory.IdentifierName("var"))
                 .WithVariables(SyntaxFactory.SingletonSeparatedList(
-                    SyntaxFactory.VariableDeclarator(variable.Identifier.ValueText)
+                    SyntaxFactory.VariableDeclarator(variableIdentifierName)
                         .WithInitializer(
                             SyntaxFactory.EqualsValueClause(
-                                SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, MoqStub.GetStubDefinitionIdentifierName(stubName), SyntaxFactory.IdentifierName("Object"))
+                                SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, MoqStub.GetStubDefinitionIdentifierName(variableName), SyntaxFactory.IdentifierName("Object"))
                             )
                         )
                 ))
                 .NormalizeWhitespace()
                 .WithLeadingTrivia(node.GetLeadingTrivia());
+
+            return stubDeclaration;
+        }
+
+        public SyntaxNode CreateLocalVariableDeclaration(LocalDeclarationStatementSyntax node, string typeToMock)
+        {
+            var variable = node.Declaration.Variables.FirstOrDefault();
+            if (variable == null)
+                return null;
+            
+            var stubName = variable.Identifier.ValueText;
+
+            var stubDefDeclaration = CreateStubDefinitionDeclaration(stubName, typeToMock);
+            var symbol = node.Declaration.GetTypeSymbol(semanticModel) as INamedTypeSymbol;
+            var initializerExpression = CreateStubInitializerDeclarations(node, stubName, symbol);
+            var stubDeclaration = CreateStubDeclaration(node, stubName, variable.Identifier.ValueText);
 
             var statements = new SyntaxList<StatementSyntax>();
             statements = statements.AddRange(new StatementSyntax[] { stubDefDeclaration }.Union(initializerExpression).Union(new StatementSyntax[] { SyntaxFactory.LocalDeclarationStatement(stubDeclaration) }));
@@ -201,7 +294,7 @@ namespace Stubs2Moqs
             
             string fakeCallName = methodOrPropertyCallIdentifier.Identifier.ValueText;
             
-            List<ITypeSymbol> lambdaArguments = null;
+            var lambdaArguments = new List<ITypeSymbol>();
             ITypeSymbol returnType = null;
             if (fakesDelegateType.TypeParameters.Length > 0)
             {
@@ -216,12 +309,12 @@ namespace Stubs2Moqs
                     lambdaArguments = fakesDelegateType.TypeArguments.ToList();
                 }
             }
-            var concreteLambdaArguments = lambdaArguments;
 
+            var concreteLambdaArguments = lambdaArguments;
+            var hashsetGenericType = new Dictionary<ITypeSymbol, TypeSyntax>();
             var genericMemberName = member.Name as GenericNameSyntax;
             if (genericMemberName != null)
             {
-                var hashsetGenericType = new Dictionary<ITypeSymbol, TypeSyntax>();
                 var realTypeArguments = genericMemberName.TypeArgumentList.Arguments;
                 for (int i = 0; i < realTypeArguments.Count; i++)
                 {
@@ -252,6 +345,16 @@ namespace Stubs2Moqs
             var originalMethodOrPropertySymbol = msTestHelper.GetOriginalSymbolFromFakeCallName(fakeCallName, lambdaArguments, originalType);
             if (originalMethodOrPropertySymbol == null)
                 return null;
+
+            var originalMethodSymbol = originalMethodOrPropertySymbol as IMethodSymbol;
+            if (originalMethodSymbol != null && originalMethodSymbol.TypeArguments.Length > 0)
+            {
+                var typeArguments = originalMethodSymbol.TypeArguments.Select(t => {
+                    var concreteType = hashsetGenericType.Where(pair => pair.Key.Name == t.Name).First().Value;
+                    return semanticModel.GetTypeInfo(concreteType).Type;
+                });
+                originalMethodOrPropertySymbol = originalMethodSymbol.Construct(typeArguments.ToArray());
+            }
 
             var msStubbed = new StubbedMethodOrProperty(originalType, originalMethodOrPropertySymbol, concreteLambdaArguments, returnType);
             var msStub = new StubbedCall(variableName, msStubbed, returnExpression, originalNode.GetLeadingTrivia(), originalNode.GetTrailingTrivia());
@@ -285,7 +388,9 @@ namespace Stubs2Moqs
             }
             var argumentList = SyntaxFactory.ArgumentList(SyntaxFactory.SeparatedList(stubArguments));
 
-            var stubLambdaAccess = SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, SyntaxFactory.IdentifierName("c"), SyntaxFactory.IdentifierName(msStub.Stubbed.MethodOrPropertySymbol.Name));
+            var typeArguments = (msStub.Stubbed.MethodOrPropertySymbol as IMethodSymbol)?.TypeArguments.Select(a => a.ToDisplayString());
+            var stubLambdaAccess = SyntaxFactory.MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, SyntaxFactory.IdentifierName("c"),
+                IdentifierNameHelper.CreateName(msStub.Stubbed.MethodOrPropertySymbol.Name, typeArguments));
             var stubLambdaParam = SyntaxFactory.Parameter(SyntaxFactory.Identifier("c"));
             SimpleLambdaExpressionSyntax stubLambda;
             if (msStub.Stubbed.MethodOrPropertySymbol.Kind == SymbolKind.Property)
@@ -297,19 +402,19 @@ namespace Stubs2Moqs
                 var stubLambdaBody = SyntaxFactory.InvocationExpression(stubLambdaAccess, argumentList);
                 stubLambda = SyntaxFactory.SimpleLambdaExpression(stubLambdaParam, stubLambdaBody).NormalizeWhitespace();
             }
-                        
+
             var stubCall = SyntaxFactory
                 .InvocationExpression(memberAccess, SyntaxFactory.ArgumentList(SyntaxFactory.SeparatedList(new[] { SyntaxFactory.Argument(stubLambda) })))
                 .WithTrailingTrivia(trivia);
 
             SimpleNameSyntax ret;
-            if (arguments.Count == 0)
+            if (msStub.Stubbed.ReturnType == null)
             {
-                ret = SyntaxFactory.IdentifierName("Returns");
+                ret = IdentifierNameHelper.CreateName("Callback", msStub.Stubbed.Arguments.Select(a => a.ToDisplayString()));
             }
             else
             {
-                ret = IdentifierNameHelper.CreateGenericName("Returns", msStub.Stubbed.Arguments.Select(a => a.ToDisplayString()));
+                ret = IdentifierNameHelper.CreateName("Returns", msStub.Stubbed.Arguments.Select(a => a.ToDisplayString()));
             }
             
             var retArgsList = SyntaxFactory.SingletonSeparatedList(SyntaxFactory.Argument(msStub.StubReturn));

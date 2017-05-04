@@ -1,4 +1,5 @@
 ﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
@@ -46,7 +47,7 @@ namespace RoslynHelpers
         {
             var arguments = memberArguments.ToList();
 
-            return symbol.GetMembers()
+            var stubbedSymbol = symbol.GetMembers()
                 .Where(m => m.DeclaredAccessibility == Accessibility.Public)
                 .Where(m =>
                 {
@@ -71,6 +72,8 @@ namespace RoslynHelpers
 
                     return true;
                 }).FirstOrDefault();
+
+            return stubbedSymbol;
         }
     }
 }

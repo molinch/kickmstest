@@ -16,6 +16,24 @@ namespace Stubs2Moqs
         {
             this.stub2Moq = stub2Moq;
         }
+        
+        public override SyntaxNode VisitPropertyDeclaration(PropertyDeclarationSyntax node)
+        {
+            var newNode = stub2Moq.SwitchPropertyDeclarationType(node);
+            if (newNode != null)
+                return newNode;
+
+            return base.VisitPropertyDeclaration(node);
+        }
+
+        public override SyntaxNode VisitFieldDeclaration(FieldDeclarationSyntax node)
+        {
+            var newNode = stub2Moq.SwitchFieldDeclarationType(node);
+            if (newNode != null)
+                return newNode;
+
+            return base.VisitFieldDeclaration(node);
+        }
 
         public override SyntaxNode VisitLocalDeclarationStatement(LocalDeclarationStatementSyntax node)
         {
@@ -30,10 +48,20 @@ namespace Stubs2Moqs
 
         public override SyntaxNode VisitExpressionStatement(ExpressionStatementSyntax node)
         {
-            var newNode = stub2Moq.TryReplaceAssignmentExpressionWithMethodCall(node);
+            SyntaxNode newNode = stub2Moq.TryReplaceAssignmentExpressionWithMethodCall(node);
             if (newNode != null)
             {
                 return newNode;
+            }
+
+            var assignementExpression = node.ChildNodes().OfType<AssignmentExpressionSyntax>().FirstOrDefault();
+            if (assignementExpression != null)
+            {
+                newNode = stub2Moq.SwitchType(assignementExpression);
+                if (newNode != null)
+                {
+                    return newNode;
+                }
             }
 
             return base.VisitExpressionStatement(node);

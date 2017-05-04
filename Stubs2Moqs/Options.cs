@@ -14,5 +14,8 @@ namespace Stubs2Moqs
 
         [Option('p', "preview", HelpText = "Preview changes only, this won't change anything", Required = false, DefaultValue = false)]
         public bool Preview { get; set; }
+
+        [Option('t', "tf", HelpText = "tf.exe path in order to automatically perform a TFS checkout before editing a file", Required = false)]
+        public string TfsExePath { get; set; }
     }
 }

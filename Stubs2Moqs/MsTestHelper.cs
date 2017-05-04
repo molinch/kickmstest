@@ -1,4 +1,5 @@
 ﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using RoslynHelpers;
 using System;
 using System.Collections.Generic;
@@ -33,10 +34,20 @@ namespace Stubs2Moqs
             {
                 switch (member.Kind)
                 {
+                    case SymbolKind.Field:
+                        var field = (IFieldSymbol)member;
+                        var fieldTypeName = field.Type.ToDisplayString();
+                        bool isFake = fieldTypeName.StartsWith("Microsoft.QualityTools.Testing.Fakes.FakesDelegates", StringComparison.InvariantCulture);
+                        if (isFake)
+                        {
+                            fakesDelegateType = (INamedTypeSymbol)field.Type;
+                        }
+                        return isFake;
+
                     case SymbolKind.Property:
                         var property = (IPropertySymbol)member;
                         var propertyTypeName = property.Type.ToDisplayString();
-                        bool isFake =  propertyTypeName.StartsWith("Microsoft.QualityTools.Testing.Fakes.FakesDelegates", StringComparison.InvariantCulture);
+                        isFake =  propertyTypeName.StartsWith("Microsoft.QualityTools.Testing.Fakes.FakesDelegates", StringComparison.InvariantCulture);
                         if (isFake)
                         {
                             fakesDelegateType = (INamedTypeSymbol)property.Type;

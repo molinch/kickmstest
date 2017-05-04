@@ -15,11 +15,24 @@ namespace RoslynHelpers
             return CreateGenericName(genericType, new[] { type });
         }
 
-        public static GenericNameSyntax CreateGenericName(string genericType, IEnumerable<string> types)
+        public static SimpleNameSyntax CreateName(string name, IEnumerable<string> typeArguments)
+        {
+            var arguments = typeArguments?.ToList();
+            if (arguments == null || arguments.Count == 0)
+            {
+                return SyntaxFactory.IdentifierName(name);
+            }
+            else
+            {
+                return CreateGenericName(name, typeArguments);
+            }
+        }
+
+        public static GenericNameSyntax CreateGenericName(string name, IEnumerable<string> types)
         {
             var argTypes = types.Select(t => SyntaxFactory.IdentifierName(t));
 
-            return SyntaxFactory.GenericName(SyntaxFactory.Identifier(genericType))
+            return SyntaxFactory.GenericName(SyntaxFactory.Identifier(name))
                 .WithTypeArgumentList(SyntaxFactory.TypeArgumentList(SyntaxFactory.SeparatedList<TypeSyntax>(argTypes)));
         }
     }

@@ -1,12 +1,17 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Formatting;
+using Microsoft.CodeAnalysis.Options;
 using RoslynHelpers;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.CodeAnalysis.Shared.Extensions;
 
 namespace Stubs2Moqs
 {
@@ -22,21 +27,21 @@ namespace Stubs2Moqs
                     throw new ArgumentException("Solution path is required");
                 }
 
-                ParseCsharpFiles(options.SolutionPath, options.Preview).Wait();
+                ParseCsharpFiles(options.SolutionPath, options.Preview, options.TfsExePath).Wait();
             }
         }
 
-        private static async Task ParseCsharpFiles(string solutionFullPath, bool previewOnly)
+        private static async Task ParseCsharpFiles(string solutionFullPath, bool previewOnly, string tfsExePath)
         {
             foreach (var item in await GetUnitTestItems(solutionFullPath))
             {
                 var stub2Moq = new MsTestStub2Moq(item.Workspace, item.File, item.SemanticModel);
                 var rewriter = new MsTestStubRewriter(stub2Moq);
-                var newTestClass = rewriter.Visit(item.Root);
+                var newTestFile = rewriter.Visit(item.Root);
 
-                if (newTestClass != item.Root)
+                if (newTestFile != item.Root)
                 {
-                    var root = newTestClass.SyntaxTree.GetRoot();
+                    var root = newTestFile.SyntaxTree.GetRoot();
                     var compilationUnitSyntax = root as CompilationUnitSyntax;
 
                     if (compilationUnitSyntax != null)
@@ -50,27 +55,44 @@ namespace Stubs2Moqs
                         {
                             var moq = SyntaxFactory.ParseName("Moq");
                             var moqUsing = SyntaxFactory.UsingDirective(moq).NormalizeWhitespace().WithTrailingTrivia(SyntaxFactory.CarriageReturnLineFeed);
-                            newTestClass = compilationUnitSyntax
-                                .AddUsings(moqUsing);
+                            root = compilationUnitSyntax.AddUsings(moqUsing);
                         }
                     }
 
-                    var newDoc = item.File.WithSyntaxRoot(newTestClass);
+                    var newDoc = item.File.WithSyntaxRoot(root);
                     var newSemanticModel = await newDoc.GetSemanticModelAsync().ConfigureAwait(false);
+                    root = await newDoc.GetSyntaxRootAsync();
 
+                    // remove useless usings (.Fakes and others)
+                    root = UsingsHelper.RemoveUnusedImportDirectives(newSemanticModel, root, CancellationToken.None);
+   
                     if (previewOnly)
                     {
-                        Console.WriteLine(newTestClass.ToFullString());
+                        Console.WriteLine(newTestFile.ToFullString());
                     }
                     else
                     {
-                        using (var writer = new StreamWriter(item.File.FilePath))
+                        if (!string.IsNullOrEmpty(tfsExePath))
                         {
-                            newTestClass.WriteTo(writer);
+                            TfsCheckOut(tfsExePath, item.File.FilePath);
+                        }
+
+                        using (var writer = new StreamWriter(item.File.FilePath, false, System.Text.UTF8Encoding.UTF8))
+                        {
+                            root.WriteTo(writer);
                         }
                     }
                 }
             }
+        }
+
+        private static void TfsCheckOut(string tfsExePath, string path)
+        {
+            var startInfo = new ProcessStartInfo(tfsExePath, "checkout " + path);
+            startInfo.CreateNoWindow = true;
+            startInfo.UseShellExecute = false;
+            var process = Process.Start(startInfo);
+            process.WaitForExit();
         }
 
         private static async Task<List<UnitTestClassItem>> GetUnitTestItems(string solutionFullPath)
@@ -82,20 +104,22 @@ namespace Stubs2Moqs
                 foreach (var csFile in project.GetCSharpFiles())
                 {
                     var root = await csFile.GetSyntaxRootAsync().ConfigureAwait(false);
-                    var semanticModel = await csFile.GetSemanticModelAsync().ConfigureAwait(false);
-
-                    foreach (var unitTestClass in root.DescendantNodes()
-                        .OfType<ClassDeclarationSyntax>()
-                        .Where(c => c.HasAttribute("TestClass")))
+                    if (root.ToFullString().Contains(".Fakes"))
                     {
-                        unitTestItems.Add(new UnitTestClassItem()
+                        var semanticModel = await csFile.GetSemanticModelAsync().ConfigureAwait(false);
+
+                        foreach (var unitTestClass in root.DescendantNodes()
+                            .OfType<ClassDeclarationSyntax>())
                         {
-                            Workspace = project.Solution.Workspace,
-                            File = csFile,
-                            Root = root,
-                            SemanticModel = semanticModel,
-                            UnitTestClass = unitTestClass
-                        });
+                            unitTestItems.Add(new UnitTestClassItem()
+                            {
+                                Workspace = project.Solution.Workspace,
+                                File = csFile,
+                                Root = root,
+                                SemanticModel = semanticModel,
+                                UnitTestClass = unitTestClass
+                            });
+                        }
                     }
                 }
             }
