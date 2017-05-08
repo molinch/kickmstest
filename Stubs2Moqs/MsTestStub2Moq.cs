@@ -357,10 +357,34 @@ namespace Stubs2Moqs
             if (originalMethodSymbol != null && originalMethodSymbol.TypeArguments.Length > 0)
             {
                 var typeArguments = originalMethodSymbol.TypeArguments.Select(t => {
-                    var concreteType = hashsetGenericType.Where(pair => pair.Key.Name == t.Name).First().Value;
-                    return semanticModel.GetTypeInfo(concreteType).Type;
+                    var concreteType = hashsetGenericType.Where(pair => pair.Key.Name == t.Name).Select(pair => pair.Value).FirstOrDefault();
+                    if (concreteType != null)
+                    {
+                        return semanticModel.GetTypeInfo(concreteType).Type;
+                    }
+                    else
+                    {
+                        // can happen for stubbed methods like Find<E>(), in that case generic type E must be explicitely passed
+                        // however MsTest tests may declare it this way: instance.FindOf1(() => ...), where ... has to return an instance of E
+                        // in that case the type is inferred
+                        var invocationExpression = originalNode as InvocationExpressionSyntax;
+                        if (invocationExpression != null)
+                        {
+                            var expressionArgument = invocationExpression.ArgumentList.Arguments.FirstOrDefault()?.Expression;
+                            if (expressionArgument != null)
+                            {
+                                var expressionType = semanticModel.GetTypeInfo(expressionArgument).ConvertedType as INamedTypeSymbol;
+                                if (expressionType != null)
+                                {
+                                    return expressionType?.TypeArguments.FirstOrDefault(); // type which is inferred
+                                }
+                            }
+                        }
+
+                        return null;
+                    }
                 });
-                originalMethodOrPropertySymbol = originalMethodSymbol.Construct(typeArguments.ToArray());
+                originalMethodOrPropertySymbol = originalMethodSymbol.Construct(typeArguments.Where(t => t != null).ToArray());
             }
 
             var msStubbed = new StubbedMethodOrProperty(originalType, originalMethodOrPropertySymbol, concreteLambdaArguments, returnType);
