@@ -1,8 +1,6 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
-using Microsoft.CodeAnalysis.Formatting;
-using Microsoft.CodeAnalysis.Options;
 using RoslynHelpers;
 using System;
 using System.Collections.Generic;
@@ -11,7 +9,6 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.CodeAnalysis.Shared.Extensions;
 
 namespace Stubs2Moqs
 {
@@ -64,7 +61,17 @@ namespace Stubs2Moqs
                     root = await newDoc.GetSyntaxRootAsync();
 
                     // remove useless usings (.Fakes and others)
-                    root = UsingsHelper.RemoveUnusedImportDirectives(newSemanticModel, root, CancellationToken.None);
+                    root = UsingsHelper.RemoveUnusedImportDirectives(newSemanticModel, root, CancellationToken.None, (r, usingNode) =>
+                    {
+                        if (usingNode.ToString().Contains("Moq"))
+                        {
+                            return !r.ToString().Contains("Mock");
+                        }
+                        else
+                        {
+                            return true;
+                        }
+                    });
    
                     if (previewOnly)
                     {
