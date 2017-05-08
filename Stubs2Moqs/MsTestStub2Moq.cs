@@ -334,9 +334,16 @@ namespace Stubs2Moqs
                 for (int i = 0; i < lambdaArguments.Count; i++)
                 {
                     var lambdaArgument = concreteLambdaArguments[i] as INamedTypeSymbol;
-                    if (lambdaArgument.IsGenericType)
+                    if (lambdaArgument != null && lambdaArgument.IsGenericType) // null check needed since ArrayType is not an INamedTypeSymbol
                     {
-                        var concreteArguments = lambdaArgument.TypeArguments.Select(arg => semanticModel.GetTypeInfo(hashsetGenericType[arg]).Type);
+                        var concreteArguments = lambdaArgument.TypeArguments.Select(arg =>
+                        {
+                            if (arg.TypeKind != TypeKind.TypeParameter)
+                            {
+                                return arg;
+                            }
+                            return semanticModel.GetTypeInfo(hashsetGenericType[arg]).Type;
+                        });
                         var unbound = lambdaArgument.ConstructUnboundGenericType();
 
                         var newLambdaArgument = lambdaArgument.ConstructedFrom.Construct(concreteArguments.ToArray());
