@@ -138,15 +138,40 @@ namespace Stubs2Moqs
             {
                 var argument = reverseLambdaArguments[i];
 
-                if (!originalMethodOrPropertyName.EndsWith(argument.Name))
+                var argumentParts = argument.ToDisplayParts(SymbolDisplayFormat.MinimallyQualifiedFormat);
+                var genericFakeName = GetFakeDisplayParts(argumentParts).ToList().Aggregate((a, b) => a + b);
+
+                if (!originalMethodOrPropertyName.EndsWith(genericFakeName))
                     break;
 
                 // remove type name from name, when needed only (for example MultiplyInt32Int32 --> Multiply)
-                originalMethodOrPropertyName = originalMethodOrPropertyName.Substring(0, originalMethodOrPropertyName.Length - argument.Name.Length);
+                originalMethodOrPropertyName = originalMethodOrPropertyName.Substring(0, originalMethodOrPropertyName.Length - genericFakeName.Length);
             }
 
             return originalMethodOrPropertyName;
         }
 
+        private IEnumerable<string> GetFakeDisplayParts(ImmutableArray<SymbolDisplayPart> parts)
+        {
+            foreach (var part in parts)
+            {
+                var sPart = part.Symbol == null ? part.ToString() : part.Symbol.Name;
+                switch (sPart)
+                {
+                    case "<":
+                        yield return "Of";
+                        break;
+
+                    case " ":
+                    case ">":
+                    case ",":
+                        break;
+
+                    default:
+                        yield return sPart;
+                        break;
+                }
+            }
+        }
     }
 }
