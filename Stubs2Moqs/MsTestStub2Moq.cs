@@ -31,10 +31,10 @@ namespace Stubs2Moqs
             if (declarationTypeSymbol == null)
                 return null;
 
-            if (!msTestHelper.IsStub(declarationTypeSymbol))
+            string typeToMock;
+            if (!msTestHelper.IsStub(declarationTypeSymbol, out typeToMock))
                 return null;
-
-            var typeToMock = declarationTypeSymbol.BaseType.GetGenericTypeArgument();
+            
             var mockType = CreateMockType(typeToMock);
 
             return node.WithDeclaration(node.Declaration.WithType(mockType.WithTriviaFrom(node.Declaration.Type)).WithTriviaFrom(node.Declaration));
@@ -46,10 +46,10 @@ namespace Stubs2Moqs
             if (declarationTypeSymbol == null)
                 return null;
 
-            if (!msTestHelper.IsStub(declarationTypeSymbol))
+            string typeToMock;
+            if (!msTestHelper.IsStub(declarationTypeSymbol, out typeToMock))
                 return null;
-
-            var typeToMock = declarationTypeSymbol.BaseType.GetGenericTypeArgument();
+            
             var mockType = CreateMockType(typeToMock).WithTriviaFrom(node.Type);
 
             return node.WithType(mockType);
@@ -67,9 +67,9 @@ namespace Stubs2Moqs
             if (declarationTypeSymbol == null)
                 return null;
 
-            if (msTestHelper.IsStub(declarationTypeSymbol))
+            string typeToMock;
+            if (msTestHelper.IsStub(declarationTypeSymbol, out typeToMock))
             {
-                var typeToMock = declarationTypeSymbol.BaseType.GetGenericTypeArgument();
                 if (typeToMock == null)
                     return null;
 
@@ -106,9 +106,9 @@ namespace Stubs2Moqs
             if (declarationTypeSymbol == null)
                 return null;
 
-            if (msTestHelper.IsStub(declarationTypeSymbol))
+            string typeToMock;
+            if (msTestHelper.IsStub(declarationTypeSymbol, out typeToMock))
             {
-                var typeToMock = declarationTypeSymbol.BaseType.GetGenericTypeArgument();
                 if (typeToMock == null)
                     return null;
 
@@ -276,7 +276,8 @@ namespace Stubs2Moqs
                     return null;
             }
 
-            if (!msTestHelper.IsStub(typeSymbol))
+            string typeToMock;
+            if (!msTestHelper.IsStub(typeSymbol, out typeToMock))
                 return null;
 
             var variableName = member.ChildNodes().OfType<IdentifierNameSyntax>().FirstOrDefault();
@@ -298,15 +299,21 @@ namespace Stubs2Moqs
             ITypeSymbol returnType = null;
             if (fakesDelegateType.TypeParameters.Length > 0)
             {
+                IEnumerable<ITypeSymbol> typeArguments = null;
                 if (fakesDelegateType.TypeParameters.Last().Name == "TResult")
                 {
                     var last = fakesDelegateType.TypeArguments.Last();
-                    lambdaArguments = fakesDelegateType.TypeArguments.Where((t, i) => i < (fakesDelegateType.TypeArguments.Length - 1)).ToList();
+                    typeArguments = fakesDelegateType.TypeArguments.Where((t, i) => i < (fakesDelegateType.TypeArguments.Length - 1));
                     returnType = last;
                 }
                 else
                 {
-                    lambdaArguments = fakesDelegateType.TypeArguments.ToList();
+                    typeArguments = fakesDelegateType.TypeArguments;
+                }
+
+                if (typeArguments != null)
+                {
+                    lambdaArguments = typeArguments.ToList();
                 }
             }
 
@@ -342,7 +349,7 @@ namespace Stubs2Moqs
             if (originalType == null)
                 return null;
 
-            var originalMethodOrPropertySymbol = msTestHelper.GetOriginalSymbolFromFakeCallName(fakeCallName, lambdaArguments, originalType);
+            var originalMethodOrPropertySymbol = msTestHelper.GetOriginalSymbolFromFakeCallName(fakeCallName, lambdaArguments, originalType, fakesDelegateType.TypeParameters);
             if (originalMethodOrPropertySymbol == null)
                 return null;
 

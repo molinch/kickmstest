@@ -5,8 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Stubs2Moqs
 {
@@ -21,9 +19,27 @@ namespace Stubs2Moqs
             this.semanticModel = semanticModel;
         }
 
-        public bool IsStub(INamedTypeSymbol typeSymbol)
+        public bool IsStub(INamedTypeSymbol typeSymbol, out string stubbedType)
         {
-            return typeSymbol.InheritsFrom("Microsoft.QualityTools.Testing.Fakes.Stubs.StubBase");
+            stubbedType = null;
+
+            if (typeSymbol.InheritsFrom("Microsoft.QualityTools.Testing.Fakes.Stubs.StubBase"))
+            {
+                stubbedType = typeSymbol.BaseType.GetGenericTypeArgument();
+            }
+            else
+            {
+                foreach (var sInterface in typeSymbol.AllInterfaces)
+                {
+                    if (sInterface.ToDisplayString().StartsWith("Microsoft.QualityTools.Testing.Fakes.Stubs.IStub") && sInterface.IsGenericType)
+                    {
+                        stubbedType = sInterface.GetGenericTypeArgument();
+                        break;
+                    }
+                }
+            }
+
+            return stubbedType != null;
         }
 
         public bool IsFakesDelegateProperty(ISymbol member, out INamedTypeSymbol fakesDelegateType, out ImmutableArray<ITypeSymbol> methodTypeArguments)
@@ -94,9 +110,9 @@ namespace Stubs2Moqs
             return false;
         }
 
-        public ISymbol GetOriginalSymbolFromFakeCallName(string fakeCallName, List<ITypeSymbol> lambdaArguments, INamedTypeSymbol originalType)
+        public ISymbol GetOriginalSymbolFromFakeCallName(string fakeCallName, List<ITypeSymbol> lambdaArguments, INamedTypeSymbol originalType, ImmutableArray<ITypeParameterSymbol> lambdaArgumentGenericNames)
         {
-            string originalName = GetOriginalMethodNameOrPropertyName(fakeCallName, lambdaArguments, originalType);
+            string originalName = GetOriginalMethodNameOrPropertyName(fakeCallName, lambdaArguments, originalType, lambdaArgumentGenericNames);
             return GetOriginalSymbol(originalName, lambdaArguments, originalType);
         }
 
@@ -117,7 +133,7 @@ namespace Stubs2Moqs
             return originalMethodOrPropertySymbol;
         }
 
-        private string GetOriginalMethodNameOrPropertyName(string fakeCallName, List<ITypeSymbol> lambdaArguments, INamedTypeSymbol originalType)
+        private string GetOriginalMethodNameOrPropertyName(string fakeCallName, List<ITypeSymbol> lambdaArguments, INamedTypeSymbol originalType, ImmutableArray<ITypeParameterSymbol> lambdaArgumentGenericNames)
         {
             // More information can be found on MSDN: https://msdn.microsoft.com/en-us/en-en/library/hh549174.aspx
 
@@ -134,18 +150,20 @@ namespace Stubs2Moqs
             // For methods we should remove extra Type names at the end of name
             string originalMethodOrPropertyName = fakeCallName;
             var reverseLambdaArguments = lambdaArguments.Reverse<ITypeSymbol>().ToList();
+            var reverseLambdaArgumentGenericNames = lambdaArgumentGenericNames.Take(reverseLambdaArguments.Count).Reverse().ToList();
             for (int i = 0; i < reverseLambdaArguments.Count; i++)
             {
                 var argument = reverseLambdaArguments[i];
 
                 var argumentParts = argument.ToDisplayParts(SymbolDisplayFormat.MinimallyQualifiedFormat);
-                var genericFakeName = GetFakeDisplayParts(argumentParts).ToList().Aggregate((a, b) => a + b);
+                var argumentFakeName = GetFakeDisplayParts(argumentParts).ToList().Aggregate((a, b) => a + b);
+                                
 
-                if (!originalMethodOrPropertyName.EndsWith(genericFakeName))
+                if (!originalMethodOrPropertyName.EndsWith(argumentFakeName))
                     break;
 
                 // remove type name from name, when needed only (for example MultiplyInt32Int32 --> Multiply)
-                originalMethodOrPropertyName = originalMethodOrPropertyName.Substring(0, originalMethodOrPropertyName.Length - genericFakeName.Length);
+                originalMethodOrPropertyName = originalMethodOrPropertyName.Substring(0, originalMethodOrPropertyName.Length - argumentFakeName.Length);
             }
 
             return originalMethodOrPropertyName;
